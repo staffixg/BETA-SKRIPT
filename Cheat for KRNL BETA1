@@ -1,0 +1,631 @@
+-- MM2 ESP Script с исправленным интерфейсом
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local CoreGui = game:GetService("CoreGui")
+
+-- Цвета для ESP
+local colors = {
+    murderer = Color3.fromRGB(255, 0, 0),
+    sheriff = Color3.fromRGB(0, 0, 255),
+    innocent = Color3.fromRGB(128, 128, 128),
+    gun = Color3.fromRGB(0, 255, 0)
+}
+
+local espObjects = {}
+local autoUpdate = true
+local screenGui = nil
+local windowOpen = false
+local speedHackEnabled = false
+local speedValue = 25
+local autoFarmEnabled = false
+local farmSpeed = 3
+local pickUpGunEnabled = false
+local originalWalkSpeed = 16
+
+-- Создание основного GUI
+function createMainGUI()
+    if screenGui then screenGui:Destroy() end
+    
+    screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "MM2MobileMenu"
+    screenGui.Parent = CoreGui
+    
+    -- Главная кнопка открытия меню
+    local mainButton = Instance.new("TextButton")
+    mainButton.Name = "MainButton"
+    mainButton.Size = UDim2.new(0, 80, 0, 80)
+    mainButton.Position = UDim2.new(0, 20, 0.5, -40)
+    mainButton.BackgroundColor3 = Color3.fromRGB(0, 100, 255)
+    mainButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    mainButton.Text = "🎮\nМЕНЮ"
+    mainButton.Font = Enum.Font.GothamBold
+    mainButton.TextSize = 14
+    mainButton.ZIndex = 10
+    mainButton.Parent = screenGui
+    
+    local iconCorner = Instance.new("UICorner")
+    iconCorner.CornerRadius = UDim.new(0, 15)
+    iconCorner.Parent = mainButton
+    
+    -- Основное меню (изначально скрыто)
+    local mainMenu = Instance.new("Frame")
+    mainMenu.Name = "MainMenu"
+    mainMenu.Size = UDim2.new(0, 250, 0, 400)
+    mainMenu.Position = UDim2.new(0, 110, 0.5, -200)
+    mainMenu.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    mainMenu.BackgroundTransparency = 0.1
+    mainMenu.BorderSizePixel = 2
+    mainMenu.BorderColor3 = Color3.fromRGB(100, 100, 255)
+    mainMenu.Visible = false
+    mainMenu.Parent = screenGui
+    
+    local UICorner = Instance.new("UICorner")
+    UICorner.CornerRadius = UDim.new(0, 12)
+    UICorner.Parent = mainMenu
+    
+    -- Заголовок меню
+    local title = Instance.new("TextLabel")
+    title.Name = "Title"
+    title.Size = UDim2.new(1, 0, 0, 40)
+    title.Position = UDim2.new(0, 0, 0, 0)
+    title.BackgroundColor3 = Color3.fromRGB(60, 60, 180)
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.Text = "🎯 MM2 ФУНКЦИИ"
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 18
+    title.Parent = mainMenu
+    
+    local titleCorner = Instance.new("UICorner")
+    titleCorner.CornerRadius = UDim.new(0, 12)
+    titleCorner.Parent = title
+    
+    -- Контейнер для кнопок
+    local buttonsFrame = Instance.new("ScrollingFrame")
+    buttonsFrame.Name = "ButtonsFrame"
+    buttonsFrame.Size = UDim2.new(1, 0, 1, -50)
+    buttonsFrame.Position = UDim2.new(0, 0, 0, 40)
+    buttonsFrame.BackgroundTransparency = 1
+    buttonsFrame.BorderSizePixel = 0
+    buttonsFrame.ScrollBarThickness = 6
+    buttonsFrame.CanvasSize = UDim2.new(0, 0, 0, 600)
+    buttonsFrame.Parent = mainMenu
+    
+    local UIListLayout = Instance.new("UIListLayout")
+    UIListLayout.Padding = UDim.new(0, 8)
+    UIListLayout.Parent = buttonsFrame
+    
+    -- === ОСНОВНЫЕ ФУНКЦИИ ===
+    local basicSection = createSection("⚡ ОСНОВНЫЕ ФУНКЦИИ")
+    basicSection.Parent = buttonsFrame
+    
+    -- 1. Телепорт к убийце
+    local teleportBtn = createMenuButton("🔫 ТЕЛЕПОРТ К УБИЙЦЕ", Color3.fromRGB(255, 60, 60))
+    teleportBtn.Parent = buttonsFrame
+    teleportBtn.MouseButton1Click:Connect(teleportAndKillMurderer)
+    
+    -- 2. Авто-подбор пистолета
+    local gunPickupBtn = createMenuButton("🎯 АВТО-ПОДБОР ПИСТОЛЕТА", Color3.fromRGB(255, 150, 0))
+    gunPickupBtn.Parent = buttonsFrame
+    gunPickupBtn.MouseButton1Click:Connect(function()
+        pickUpGunEnabled = not pickUpGunEnabled
+        if pickUpGunEnabled then
+            gunPickupBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+            startGunPickup()
+        else
+            gunPickupBtn.BackgroundColor3 = Color3.fromRGB(255, 150, 0)
+        end
+    end)
+    
+    -- 3. Обновить ESP
+    local refreshBtn = createMenuButton("🔄 ОБНОВИТЬ ESP", Color3.fromRGB(60, 120, 255))
+    refreshBtn.Parent = buttonsFrame
+    refreshBtn.MouseButton1Click:Connect(function()
+        clearAllESP()
+        updateESP()
+        highlightGuns()
+    end)
+    
+    -- === СКОРОСТЬ ===
+    local speedSection = createSection("🏃‍♂️ СКОРОСТЬ ПЕРСОНАЖА")
+    speedSection.Parent = buttonsFrame
+    
+    -- Настройка скорости
+    local speedSetting = createSpeedSetting()
+    speedSetting.Parent = buttonsFrame
+    
+    local speedToggle = createMenuButton("⚡ ВКЛ/ВЫКЛ СКОРОСТЬ", Color3.fromRGB(100, 100, 200))
+    speedToggle.Parent = buttonsFrame
+    speedToggle.MouseButton1Click:Connect(function()
+        speedHackEnabled = not speedHackEnabled
+        if speedHackEnabled then
+            speedToggle.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+        else
+            speedToggle.BackgroundColor3 = Color3.fromRGB(100, 100, 200)
+        end
+        applySpeedHack()
+    end)
+    
+    -- === АВТОФАРМ ===
+    local farmSection = createSection("💰 АВТОФАРМ")
+    farmSection.Parent = buttonsFrame
+    
+    -- Настройка скорости фарма
+    local farmSpeedSetting = createFarmSpeedSetting()
+    farmSpeedSetting.Parent = buttonsFrame
+    
+    local farmToggle = createMenuButton("🚀 ВКЛ/ВЫКЛ АВТОФАРМ", Color3.fromRGB(150, 0, 150))
+    farmToggle.Parent = buttonsFrame
+    farmToggle.MouseButton1Click:Connect(function()
+        autoFarmEnabled = not autoFarmEnabled
+        if autoFarmEnabled then
+            farmToggle.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+            startAutoFarm()
+        else
+            farmToggle.BackgroundColor3 = Color3.fromRGB(150, 0, 150)
+            stopAutoFarm()
+        end
+    end)
+    
+    -- Кнопка закрытия меню
+    local closeBtn = createMenuButton("❌ ЗАКРЫТЬ МЕНЮ", Color3.fromRGB(150, 150, 150))
+    closeBtn.Parent = buttonsFrame
+    closeBtn.MouseButton1Click:Connect(function()
+        mainMenu.Visible = false
+        windowOpen = false
+    end)
+    
+    -- Функция открытия/закрытия меню
+    mainButton.MouseButton1Click:Connect(function()
+        windowOpen = not windowOpen
+        mainMenu.Visible = windowOpen
+    end)
+    
+    -- Делаем меню перемещаемым
+    makeMenuDraggable(mainMenu, mainButton, title)
+end
+
+-- Создание кнопки меню
+function createMenuButton(text, color)
+    local button = Instance.new("TextButton")
+    button.Size = UDim2.new(0.9, 0, 0, 45)
+    button.BackgroundColor3 = color
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.Text = text
+    button.Font = Enum.Font.GothamBold
+    button.TextSize = 13
+    button.AutoButtonColor = true
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = button
+    
+    return button
+end
+
+-- Создание секции
+function createSection(text)
+    local section = Instance.new("TextLabel")
+    section.Size = UDim2.new(0.9, 0, 0, 25)
+    section.BackgroundColor3 = Color3.fromRGB(70, 70, 90)
+    section.TextColor3 = Color3.fromRGB(255, 255, 255)
+    section.Text = "  " .. text
+    section.Font = Enum.Font.GothamBold
+    section.TextSize = 12
+    section.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = section
+    
+    return section
+end
+
+-- Настройка скорости
+function createSpeedSetting()
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0.9, 0, 0, 40)
+    frame.BackgroundTransparency = 1
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.6, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.Text = "Скорость бега:"
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 12
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+    
+    local textBox = Instance.new("TextBox")
+    textBox.Size = UDim2.new(0.35, 0, 0.7, 0)
+    textBox.Position = UDim2.new(0.6, 0, 0.15, 0)
+    textBox.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+    textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    textBox.Text = tostring(speedValue)
+    textBox.Font = Enum.Font.Gotham
+    textBox.TextSize = 12
+    textBox.PlaceholderText = "25"
+    textBox.Parent = frame
+    
+    textBox.FocusLost:Connect(function()
+        local newSpeed = tonumber(textBox.Text)
+        if newSpeed and newSpeed >= 16 and newSpeed <= 100 then
+            speedValue = newSpeed
+            applySpeedHack()
+        else
+            textBox.Text = tostring(speedValue)
+        end
+    end)
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = textBox
+    
+    return frame
+end
+
+-- Настройка скорости фарма
+function createFarmSpeedSetting()
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0.9, 0, 0, 40)
+    frame.BackgroundTransparency = 1
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.6, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.Text = "Скорость фарма:"
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 12
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+    
+    local textBox = Instance.new("TextBox")
+    textBox.Size = UDim2.new(0.35, 0, 0.7, 0)
+    textBox.Position = UDim2.new(0.6, 0, 0.15, 0)
+    textBox.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+    textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    textBox.Text = tostring(farmSpeed)
+    textBox.Font = Enum.Font.Gotham
+    textBox.TextSize = 12
+    textBox.PlaceholderText = "3"
+    textBox.Parent = frame
+    
+    textBox.FocusLost:Connect(function()
+        local newSpeed = tonumber(textBox.Text)
+        if newSpeed and newSpeed >= 1 and newSpeed <= 10 then
+            farmSpeed = newSpeed
+        else
+            textBox.Text = tostring(farmSpeed)
+        end
+    end)
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = textBox
+    
+    return frame
+end
+
+-- Перемещение меню
+function makeMenuDraggable(menu, button, dragHandle)
+    local dragging = false
+    local dragInput, dragStart, startPos
+    
+    local function update(input)
+        local delta = input.Position - dragStart
+        menu.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        button.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+    
+    dragHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = menu.Position
+            
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+    
+    dragHandle.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            update(input)
+        end
+    end)
+end
+
+-- Функция скорости
+function applySpeedHack()
+    local character = LocalPlayer.Character
+    if character then
+        local humanoid = character:FindFirstChild("Humanoid")
+        if humanoid then
+            if speedHackEnabled then
+                humanoid.WalkSpeed = speedValue
+            else
+                humanoid.WalkSpeed = originalWalkSpeed
+            end
+        end
+    end
+end
+
+-- Автофарм с переворотом
+local farming = false
+
+function startAutoFarm()
+    farming = true
+    spawn(function()
+        local character = LocalPlayer.Character
+        if character then
+            local humanoid = character:FindFirstChild("Humanoid")
+            local root = character:FindFirstChild("HumanoidRootPart")
+            
+            if humanoid and root then
+                humanoid.PlatformStand = true
+                root.CFrame = root.CFrame * CFrame.Angles(math.rad(180), 0, 0)
+            end
+        end
+        
+        while farming and autoFarmEnabled do
+            farmCoins()
+            wait(farmSpeed)
+        end
+        
+        if character then
+            local humanoid = character:FindFirstChild("Humanoid")
+            if humanoid then
+                humanoid.PlatformStand = false
+            end
+        end
+    end)
+end
+
+function stopAutoFarm()
+    farming = false
+end
+
+function farmCoins()
+    local character = LocalPlayer.Character
+    if not character then return end
+    
+    local root = character:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    
+    for _, item in pairs(workspace:GetDescendants()) do
+        if farming == false then break end
+        
+        if item.Name:lower():find("coin") or item.Name:lower():find("candy") or item.Name:lower():find("snowflake") then
+            if item:IsA("Part") and item:IsDescendantOf(workspace) then
+                root.CFrame = item.CFrame + Vector3.new(0, 3, 0)
+                wait(0.5)
+            end
+        end
+    end
+end
+
+-- Авто-подбор пистолета
+function startGunPickup()
+    spawn(function()
+        while pickUpGunEnabled do
+            local gun = findGunOnGround()
+            if gun then
+                local character = LocalPlayer.Character
+                if character and not hasGun() then
+                    local root = character:FindFirstChild("HumanoidRootPart")
+                    local originalPosition = root.CFrame
+                    
+                    root.CFrame = gun.CFrame + Vector3.new(0, 2, 0)
+                    wait(0.5)
+                    wait(1)
+                    root.CFrame = originalPosition
+                    
+                    pickUpGunEnabled = false
+                    break
+                end
+            end
+            wait(1)
+        end
+    end)
+end
+
+function findGunOnGround()
+    for _, item in pairs(workspace:GetDescendants()) do
+        if item.Name == "Gun" and item:IsA("Part") then
+            return item
+        end
+    end
+    return nil
+end
+
+-- ESP функции
+function autoUpdateESP()
+    while autoUpdate do
+        wait(2)
+        clearAllESP()
+        updateESP()
+        highlightGuns()
+    end
+end
+
+function clearAllESP()
+    for player, highlight in pairs(espObjects) do
+        if highlight then
+            highlight:Destroy()
+        end
+    end
+    espObjects = {}
+    
+    for _, item in pairs(workspace:GetDescendants()) do
+        if item:FindFirstChild("GunESP") then
+            item.GunESP:Destroy()
+        end
+    end
+end
+
+function createESP(player, color)
+    if espObjects[player] then 
+        espObjects[player]:Destroy()
+    end
+    
+    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        local highlight = Instance.new("Highlight")
+        highlight.Name = "MM2ESP"
+        highlight.Adornee = player.Character
+        highlight.FillColor = color
+        highlight.OutlineColor = color
+        highlight.FillTransparency = 0.3
+        highlight.OutlineTransparency = 0
+        highlight.Parent = player.Character
+        
+        espObjects[player] = highlight
+    end
+end
+
+function updateESP()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local role = getRole(player)
+            local color = colors.innocent
+            
+            if role == "Murderer" then
+                color = colors.murderer
+            elseif role == "Sheriff" then
+                color = colors.sheriff
+            end
+            
+            createESP(player, color)
+        end
+    end
+end
+
+function getRole(player)
+    if player.Backpack:FindFirstChild("Knife") or (player.Character and player.Character:FindFirstChild("Knife")) then
+        return "Murderer"
+    elseif player.Backpack:FindFirstChild("Gun") or (player.Character and player.Character:FindFirstChild("Gun")) then
+        return "Sheriff"
+    end
+    return "Innocent"
+end
+
+function highlightGuns()
+    for _, item in pairs(workspace:GetDescendants()) do
+        if item.Name == "Gun" and item:IsA("Part") then
+            if not item:FindFirstChild("GunESP") then
+                local gunHighlight = Instance.new("Highlight")
+                gunHighlight.Name = "GunESP"
+                gunHighlight.Adornee = item
+                gunHighlight.FillColor = colors.gun
+                gunHighlight.OutlineColor = colors.gun
+                gunHighlight.FillTransparency = 0.2
+                gunHighlight.Parent = item
+            end
+        end
+    end
+end
+
+-- Функция телепортации и убийства
+function teleportAndKillMurderer()
+    if not hasGun() then
+        print("❌ У вас нет оружия!")
+        return
+    end
+    
+    local murderer = findMurderer()
+    if not murderer then
+        print("❌ Убийца не найден!")
+        return
+    end
+    
+    local character = LocalPlayer.Character
+    if not character then return end
+    
+    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+    local murdererRoot = murderer.Character:FindFirstChild("HumanoidRootPart")
+    
+    if not humanoidRootPart or not murdererRoot then return end
+    
+    humanoidRootPart.CFrame = murdererRoot.CFrame * CFrame.new(0, 0, -2)
+    wait(0.3)
+    
+    local gun = getGun()
+    if gun then
+        local args = {
+            [1] = murderer.Character.Head.Position,
+            [2] = murderer.Character.Head
+        }
+        
+        pcall(function()
+            gun:FindFirstChildWhichIsA("RemoteEvent"):FireServer(unpack(args))
+        end)
+        
+        print("✅ Убийца уничтожен!")
+    end
+end
+
+function hasGun()
+    return getGun() ~= nil
+end
+
+function getGun()
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Gun") then
+        return LocalPlayer.Character.Gun
+    elseif LocalPlayer.Backpack:FindFirstChild("Gun") then
+        return LocalPlayer.Backpack.Gun
+    end
+    return nil
+end
+
+function findMurderer()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and getRole(player) == "Murderer" then
+            return player
+        end
+    end
+    return nil
+end
+
+-- Автоматическое применение скорости при спавне
+LocalPlayer.CharacterAdded:Connect(function(character)
+    wait(1)
+    applySpeedHack()
+end)
+
+-- Создаем GUI
+createMainGUI()
+
+-- Запуск систем
+spawn(autoUpdateESP)
+
+-- Первоначальная настройка
+updateESP()
+highlightGuns()
+
+print("🎮 MM2 МЕНЮ АКТИВИРОВАНО!")
+print("📱 Нажмите на кнопку 🎮МЕНЮ чтобы открыть функции")
+print("✨ Доступные функции:")
+print("   • 🔫 Телепорт к убийце")
+print("   • 🎯 Авто-подбор пистолета") 
+print("   • 🏃‍♂️ Настройка скорости")
+print("   • 🚀 Автофарм монет")
+print("   • 🔄 Обновление ESP")
+
+-- Очистка при выходе
+Players.PlayerRemoving:Connect(function(player)
+    if espObjects[player] then
+        espObjects[player]:Destroy()
+        espObjects[player] = nil
+    end
+end)
